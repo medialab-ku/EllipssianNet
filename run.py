@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 import sys
 
 from PIL import Image
-from train import EllipssianNet
+from EllipssianNetCNN import EllipssianNetCNN
 
 from skimage.feature import peak_local_max
 
@@ -32,8 +32,9 @@ def inference(image_path):
 
 def draw_ellipssians_on_image(centers, cov_map, image):
     # Convert means and covariances to numpy for easier manipulation
-    H_factor = image.shape[0] * 1.0
-    W_factor = image.shape[1] * 1.0
+
+    H_factor = image.shape[0] * 0.6
+    W_factor = image.shape[1] * 0.6
 
     cov_map[0, 0, :, :] *= (W_factor ** 2)  # Normalize the variance along x-axis
     cov_map[1, 1, :, :] *= (H_factor ** 2)  # Normalize the variance along y-axis
@@ -44,7 +45,7 @@ def draw_ellipssians_on_image(centers, cov_map, image):
     x_coords, y_coords = centers[:, 1], centers[:, 0]
 
     # Extract covariances using advanced indexing
-    extracted_covariances = cov_map[:, :, y_coords, x_coords]
+    extracted_covariances = cov_map[:, :, x_coords, y_coords]
     extracted_colors = image[y_coords, x_coords, :]
 
     result_img = np.zeros([image.shape[0], image.shape[1], 3], dtype=np.uint8)
@@ -90,8 +91,8 @@ if __name__ == '__main__':
     parser.add_argument('--img_path', type=str, default="")
     args = parser.parse_args(sys.argv[1:])
 
-    model = EllipssianNet()
-    model.load_state_dict(torch.load('EllipssianNet.pth'))
+    model = EllipssianNetCNN()
+    model.load_state_dict(torch.load('E:/ISMAR_2025/weightEllipssianNetCNN.pth'))
     model.eval()  # Set to evaluation mode
     model = model.cuda()  # Move to GPU if available
 
@@ -105,7 +106,7 @@ if __name__ == '__main__':
     gradient_result, center_result, cov_result = inference(img_path)
 
     # Center points are extracted with local maxima
-    coordinates = peak_local_max(center_result*256, min_distance=10, threshold_abs=30)
+    coordinates = peak_local_max(center_result*256, min_distance=5, threshold_abs=30)
     center_point_image = cv2.cvtColor(center_result, cv2.COLOR_GRAY2BGR)
     for coord in coordinates:
         cv2.circle(center_point_image, (coord[1], coord[0]), 3, (0, 0, 255), -1)

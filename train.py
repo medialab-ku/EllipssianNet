@@ -10,8 +10,10 @@ from tqdm import tqdm
 from argparse import ArgumentParser
 import sys
 import numpy as np
+from torch.optim.lr_scheduler import LambdaLR
 
-import torch.nn.functional as F
+
+from EllipssianNetCNN import EllipssianNetCNN
 
 # Custom Dataset Class
 class ImageDataset(Dataset):
@@ -46,127 +48,53 @@ class ImageDataset(Dataset):
             input_image = self.transform(input_image)
             target_gradient = self.transform(target_gradient)
             target_center = self.transform(target_center)
-        target_cov = torch.tensor(target_cov, dtype=torch.float32).permute(0, 1, 3, 2)  # Now it’s 2 x 2 x 480 x 640
+        target_cov = torch.tensor(target_cov, dtype=torch.float32)
+        # target_cov = self.transform(target_cov)
+        # target_cov = torch.tensor(target_cov, dtype=torch.float32).permute(0, 1, 3, 2)  # Now it’s 2 x 2 x 480 x 640
 
         return input_image, target_gradient, target_center, target_cov
-
-
-# Define the model
-class EllipssianNet(nn.Module):
-    def __init__(self):
-        super(EllipssianNet, self).__init__()
-        resnet = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
-
-        # Encoder: using ResNet's layers without the fully connected part
-        self.encoder = nn.Sequential(*list(resnet.children())[:-2])
-
-        # Decoder: upsampling back to the original image size
-        self.gradient_decoder = nn.Sequential(
-            nn.ConvTranspose2d(2048, 1024, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(1024),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(1024, 512, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(512, 256, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(256, 128, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(64, 1, kernel_size=3, stride=1, padding=1),  # Output 1 channels (gray)
-            nn.Sigmoid()
-        )
-
-
-        self.center_decoder = nn.Sequential(
-            nn.ConvTranspose2d(2048, 1024, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(1024),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(1024, 512, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(512, 256, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(256, 128, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(64, 1, kernel_size=3, stride=1, padding=1),  # Output 1 channels (gray)
-            nn.Sigmoid()
-        )
-
-        self.cov_decoder = nn.Sequential(
-            nn.ConvTranspose2d(2048, 1024, kernel_size=3, stride=2, padding=1, output_padding=1),
-            # Upsample by 2x (15x20 -> 30x40)
-            nn.ReLU(inplace=True),
-            nn.Conv2d(1024, 512, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-
-            nn.ConvTranspose2d(512, 256, kernel_size=3, stride=2, padding=1, output_padding=1),
-            # Upsample by 2x (30x40 -> 60x80)
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 128, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-
-            nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-            # Upsample by 2x (60x80 -> 120x160)
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 32, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-
-            nn.ConvTranspose2d(32, 16, kernel_size=3, stride=2, padding=1, output_padding=1),
-            # Upsample by 2x (120x160 -> 240x320)
-            nn.ReLU(inplace=True),
-            nn.Conv2d(16, 8, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-
-            nn.ConvTranspose2d(8, 4, kernel_size=3, stride=2, padding=1, output_padding=1),
-            # Upsample by 2x (240x320 -> 480x640)
-            nn.ReLU(inplace=True),
-            nn.Conv2d(4, 4, kernel_size=3, padding=1),  # Final 4-channel output
-        )
-
-    def forward(self, x, training=True):
-        encoder_output  = self.encoder(x)
-
-        # Gradient decoder output
-        gradient_output = self.gradient_decoder(encoder_output)
-
-        # Upsample encoder output to match gradient output's spatial dimensions
-        encoder_output_upsampled = F.interpolate(encoder_output, size=gradient_output.shape[2:], mode='bilinear',
-                                                 align_corners=False)
-
-        # Upsample gradient output if necessary, then use it as an attention mask
-        attention_mask = F.interpolate(gradient_output, size=encoder_output.shape[2:], mode='bilinear',
-                                       align_corners=False)
-
-        # Use the attention mask to modulate the encoder output
-        modified_encoder_output = encoder_output * attention_mask  # Element-wise multiplication
-
-        # Pass the modified encoder output to the center and covariance decoders
-        center_output = self.center_decoder(modified_encoder_output)
-        cov_output = self.cov_decoder(modified_encoder_output)
-        cov_output = cov_output.view(cov_output.size(0), 2, 2, cov_output.size(2), cov_output.size(3))
-
-        if training:
-                return gradient_output, center_output, cov_output
-        return center_output, cov_output
 
 
 
 if __name__ == '__main__':
     parser = ArgumentParser(description="Training script parameters")
     parser.add_argument('--dataset_path', type=str, default="")
+    parser.add_argument('--network_type', type=str, default="CNN")
+    parser.add_argument('--train_mode', type=str, default="")
+    parser.add_argument('--chkpoint_load_path', type=str, default="")
+    parser.add_argument('--chkpoint_save_path', type=str, default="")
     args = parser.parse_args(sys.argv[1:])
-
     dataset_path = args.dataset_path
+    network_type = args.network_type
+    train_mode = args.train_mode
+    chkpoint_load_path = args.chkpoint_load_path
+    chkpoint_save_path = args.chkpoint_save_path
+
+    # Save checkpoint function
+    def save_checkpoint(epoch, model, optimizer, scheduler, path):
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict()
+        }
+        torch.save(checkpoint, path)
+        print(f"Checkpoint saved at epoch {epoch} to {path}")
+
+
+    # Load checkpoint function
+    def load_checkpoint(path, model, optimizer, scheduler):
+        checkpoint = torch.load(path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        print(f"Checkpoint loaded. Resuming from epoch {start_epoch}")
+        return start_epoch
+
+    ########################################################################################
+
+
 
     # Data Transformations
     transform = transforms.Compose([
@@ -176,97 +104,72 @@ if __name__ == '__main__':
     # Load Dataset
     train_dataset = ImageDataset(input_dir=dataset_path+'/voronoi', gradient_dir=dataset_path+'/gradient',
                                  center_dir=dataset_path+'/center', cov_dir=dataset_path+'/cov', transform=transform)
-    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
-
+    train_loader = DataLoader(train_dataset, batch_size=10, shuffle=True)
 
     # Initialize model, loss function, and optimizer
-    model = EllipssianNet().cuda()
+    model = None
+    if network_type == "CNN":
+        model = EllipssianNetCNN().cuda()
     criterion_gradient = nn.MSELoss()  # Fully convolutional cross-entropy for gradient
     criterion_center = nn.MSELoss()  # Fully convolutional cross-entropy for center
+    criterion_cov = nn.MSELoss()  # Fully convolutional cross-entropy for center
     encoder_lr = 1e-4
     gradient_decoder_lr = 1e-4
     center_decoder_lr = 1e-4
     cov_decoder_lr = 1e-4
 
+    start_lr = 1e-4
+    end_lr = 1e-6
 
 
+    # Custom exponential decay function
+    def exponential_decay(epoch, num_epochs, start_lr, end_lr):
+        decay_rate = (end_lr / start_lr) ** (1 / num_epochs)
+        return decay_rate ** epoch
 
-    def weighted_mse_loss(pred, target, weight):
-        return torch.mean((pred - target) ** 2)
-        return torch.mean(weight * (pred - target) ** 2)
-
-    # Training Encoder, Gradient and Center Decoders
     # Initialize the optimizer with parameter groups
     optimizer = optim.Adam([
         {'params': model.encoder.parameters(), 'lr': encoder_lr},
         {'params': model.gradient_decoder.parameters(), 'lr': gradient_decoder_lr},
-        {'params': model.center_decoder.parameters(), 'lr': center_decoder_lr}
+        {'params': model.center_decoder.parameters(), 'lr': center_decoder_lr},
+        {'params': model.cov_decoder.parameters(), 'lr': cov_decoder_lr}
     ])
-    num_epochs = 30
-    for epoch in range(num_epochs):
+    start_epoch = 0  # Default to start from scratch
+    num_epochs = 100
+
+
+    scheduler = LambdaLR(
+        optimizer,
+        lr_lambda=lambda epoch: exponential_decay(epoch, num_epochs, start_lr, end_lr)
+    )
+
+    # Uncomment the following line to load a checkpoint and continue training
+    if train_mode == "load_chk":
+        start_epoch = load_checkpoint(chkpoint_load_path, model, optimizer, scheduler)
+
+    for epoch in range(start_epoch, num_epochs):
         model.train()
         running_loss = 0.0
 
         # Use tqdm to display a progress bar during training
-        progress_bar = tqdm(train_loader, desc=f"Epoch [{epoch+1}/{num_epochs}]", unit="batch")
+        progress_bar = tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{num_epochs}]", unit="batch")
 
         for inputs, target_gradient, target_center, target_cov in progress_bar:
             inputs = inputs.cuda()
             target_gradient = target_gradient.cuda()
             target_center = target_center.cuda()
-
-            # Forward pass
-            output_gradient, output_center, output_cov = model(inputs, training=True)
-
-            # Compute individual losses with weights
-            loss_gradient = criterion_gradient(output_gradient, target_gradient) * 1.0
-            loss_center = criterion_center(output_center, target_center) * 1.0
-
-            # Combine weighted losses
-            loss = loss_gradient + loss_center
-
-            # Backward pass and optimization
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            # Update running loss for display
-            running_loss += loss.item()
-            progress_bar.set_postfix({
-                "Total Loss": f"{loss.item():.4f}",
-                "Gradient Loss": f"{loss_gradient.item():.4f}",
-                "Center Loss": f"{loss_center.item():.4f}"
-            })
-
-        print(f'Epoch [{epoch + 1}/{num_epochs}] Average Loss: {running_loss / len(train_loader):.4f}')
-
-
-    # Training Cov Decoder
-    # Initialize the optimizer with parameter groups
-    optimizer = optim.Adam([
-        {'params': model.cov_decoder.parameters(), 'lr': cov_decoder_lr}
-    ])
-
-    for epoch in range(num_epochs):
-        model.train()
-        running_loss = 0.0
-
-        # Use tqdm to display a progress bar during training
-        progress_bar = tqdm(train_loader, desc=f"Epoch [{epoch+1}/{num_epochs}]", unit="batch")
-
-        for inputs, target_gradient, target_center, target_cov in progress_bar:
-            inputs = inputs.cuda()
-            target_gradient = target_gradient.cuda()
             target_cov = target_cov.cuda()
 
             # Forward pass
             output_gradient, output_center, output_cov = model(inputs, training=True)
 
-            # Compute individual losses with weights
-            loss_cov = weighted_mse_loss(output_cov, target_cov, target_center) * 1.0
+            # Compute individual losses
+            loss_gradient = criterion_gradient(output_gradient, target_gradient) * 1.0
+            loss_center = criterion_center(output_center, target_center) * 1.0
+            loss_cov = criterion_cov(output_cov, target_cov) * 1.0
 
-            # Combine weighted losses
-            loss =  loss_cov
+            # Total loss
+            loss = loss_gradient + loss_center + loss_cov
 
             # Backward pass and optimization
             optimizer.zero_grad()
@@ -276,9 +179,18 @@ if __name__ == '__main__':
             # Update running loss for display
             running_loss += loss.item()
             progress_bar.set_postfix({
-                "Cov Loss": f"{loss_cov.item():.4f}"
+                "Total Loss": f"{loss.item():.6f}",
+                "Gradient Loss": f"{loss_gradient.item():.6f}",
+                "Covariance Loss": f"{loss_cov.item():.6f}"
             })
-        print(f'Epoch [{epoch + 1}/{num_epochs}] Average Loss: {running_loss / len(train_loader):.4f}')
+        scheduler.step()
 
-    torch.save(model.state_dict(), 'EllipssianNet.pth')
+        print(f"Epoch [{epoch + 1}/{num_epochs}] Average Loss: {running_loss / len(train_loader):.6f}")
+        print(f"Learning Rate: {scheduler.get_last_lr()}")
+        # Save checkpoint every 100 epochs
+        if (epoch + 1) % 5 == 0:
+            checkpoint_path = chkpoint_save_path + f'/{network_type}_chkpoint_{epoch + 1:03d}.pth'
+            save_checkpoint(epoch, model, optimizer, scheduler, checkpoint_path)
+
+    torch.save(model.state_dict(), chkpoint_save_path + f'/EllipssianNet{network_type}.pth')
     print("Training Complete!")
