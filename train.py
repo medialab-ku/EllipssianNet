@@ -14,6 +14,7 @@ from torch.optim.lr_scheduler import LambdaLR
 
 
 from EllipssianNetCNN import EllipssianNetCNN
+from EllipssianNetFPN import EllipssianNetFPN
 
 # Custom Dataset Class
 class ImageDataset(Dataset):
@@ -110,6 +111,9 @@ if __name__ == '__main__':
     model = None
     if network_type == "CNN":
         model = EllipssianNetCNN().cuda()
+    elif network_type == "FPN":
+        model = EllipssianNetFPN().cuda()
+
     criterion_gradient = nn.MSELoss()  # Fully convolutional cross-entropy for gradient
     criterion_center = nn.MSELoss()  # Fully convolutional cross-entropy for center
     criterion_cov = nn.MSELoss()  # Fully convolutional cross-entropy for center
@@ -128,12 +132,16 @@ if __name__ == '__main__':
         return decay_rate ** epoch
 
     # Initialize the optimizer with parameter groups
-    optimizer = optim.Adam([
-        {'params': model.encoder.parameters(), 'lr': encoder_lr},
-        {'params': model.gradient_decoder.parameters(), 'lr': gradient_decoder_lr},
-        {'params': model.center_decoder.parameters(), 'lr': center_decoder_lr},
-        {'params': model.cov_decoder.parameters(), 'lr': cov_decoder_lr}
-    ])
+
+    if network_type == "CNN":
+        optimizer = optim.Adam([
+            {'params': model.encoder.parameters(), 'lr': encoder_lr},
+            {'params': model.gradient_decoder.parameters(), 'lr': gradient_decoder_lr},
+            {'params': model.center_decoder.parameters(), 'lr': center_decoder_lr},
+            {'params': model.cov_decoder.parameters(), 'lr': cov_decoder_lr}
+        ])
+    elif network_type == "FPN":
+        optimizer = optim.Adam(model.parameters(), lr=encoder_lr)
     start_epoch = 0  # Default to start from scratch
     num_epochs = 100
 
