@@ -7,6 +7,7 @@ import sys
 
 from PIL import Image
 from EllipssianNetCNN import EllipssianNetCNN
+from EllipssianNetCNN_light import EllipssianNetCNNLight
 
 from skimage.feature import peak_local_max
 
@@ -91,8 +92,13 @@ if __name__ == '__main__':
     parser.add_argument('--img_path', type=str, default="")
     args = parser.parse_args(sys.argv[1:])
 
-    model = EllipssianNetCNN()
-    model.load_state_dict(torch.load('E:/ISMAR_2025/weightEllipssianNetCNN.pth'))
+    # model = EllipssianNetCNN()
+    # model.load_state_dict(torch.load('E:/ISMAR_2025/weightEllipssianNetCNN.pth'))
+
+    model = EllipssianNetCNNLight()
+    model.load_state_dict(torch.load('D:/mg/weight/EllipssianNetCNN_light.pth'))
+
+
     model.eval()  # Set to evaluation mode
     model = model.cuda()  # Move to GPU if available
 

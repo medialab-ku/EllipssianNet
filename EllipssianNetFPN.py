@@ -110,16 +110,23 @@ class EllipssianNetFPN(nn.Module):
         # Pass the aggregated feature to the decoders
         gradient_output = self.gradient_decoder(aggregated_feature)
 
-        # Interpolate gradient output to match aggregated feature resolution if needed
-        if gradient_output.shape[2:] != aggregated_feature.shape[2:]:
-            attention_mask = F.interpolate(
-                gradient_output,
-                size=aggregated_feature.shape[2:],
-                mode='bilinear',
-                align_corners=False
-            )
-        else:
-            attention_mask = gradient_output
+        # # Interpolate gradient output to match aggregated feature resolution if needed
+        # if gradient_output.shape[2:] != aggregated_feature.shape[2:]:
+        #     attention_mask = F.interpolate(
+        #         gradient_output,
+        #         size=aggregated_feature.shape[2:],
+        #         mode='bilinear',
+        #         align_corners=False
+        #     )
+        # else:
+        #     attention_mask = gradient_output
+
+        attention_mask = F.interpolate(
+            gradient_output,
+            size=aggregated_feature.shape[2:],
+            mode='bilinear',
+            align_corners=False
+        )
 
         modified_aggregated_feature = aggregated_feature * attention_mask
 

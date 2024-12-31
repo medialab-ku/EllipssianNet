@@ -15,7 +15,8 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from EllipssianNetCNN import EllipssianNetCNN
 from EllipssianNetFPN import EllipssianNetFPN
-
+from EllipssianNetCNN_light import EllipssianNetCNNLight
+from torch.utils.data import Subset
 # Custom Dataset Class
 class ImageDataset(Dataset):
     def __init__(self, input_dir, gradient_dir, center_dir, cov_dir, transform=None):
@@ -105,7 +106,11 @@ if __name__ == '__main__':
     # Load Dataset
     train_dataset = ImageDataset(input_dir=dataset_path+'/voronoi', gradient_dir=dataset_path+'/gradient',
                                  center_dir=dataset_path+'/center', cov_dir=dataset_path+'/cov', transform=transform)
-    train_loader = DataLoader(train_dataset, batch_size=10, shuffle=True)
+    # Select the first 50,000 samples
+    subset_indices = range(50000)  # Take the first 50,000 indices
+    train_subset = Subset(train_dataset, subset_indices)  # Create the subset
+
+    train_loader = DataLoader(train_subset, batch_size=50, shuffle=True)
 
     # Initialize model, loss function, and optimizer
     model = None
@@ -113,6 +118,8 @@ if __name__ == '__main__':
         model = EllipssianNetCNN().cuda()
     elif network_type == "FPN":
         model = EllipssianNetFPN().cuda()
+    elif network_type == "CNN_light":
+        model = EllipssianNetCNNLight().cuda()
 
     criterion_gradient = nn.MSELoss()  # Fully convolutional cross-entropy for gradient
     criterion_center = nn.MSELoss()  # Fully convolutional cross-entropy for center
@@ -142,6 +149,13 @@ if __name__ == '__main__':
         ])
     elif network_type == "FPN":
         optimizer = optim.Adam(model.parameters(), lr=encoder_lr)
+    elif network_type == "CNN_light":
+        optimizer = optim.Adam([
+            {'params': model.encoder.parameters(), 'lr': encoder_lr},
+            {'params': model.gradient_decoder.parameters(), 'lr': gradient_decoder_lr},
+            {'params': model.center_decoder.parameters(), 'lr': center_decoder_lr},
+            {'params': model.cov_decoder.parameters(), 'lr': cov_decoder_lr}
+        ])
     start_epoch = 0  # Default to start from scratch
     num_epochs = 100
 
