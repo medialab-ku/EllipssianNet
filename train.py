@@ -16,6 +16,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from EllipssianNetCNN import EllipssianNetCNN
 from EllipssianNetFPN import EllipssianNetFPN
 from EllipssianNetCNN_light import EllipssianNetCNNLight
+from EllipssianNetSlim import EllipssianNetSlim
 from torch.utils.data import Subset
 # Custom Dataset Class
 class ImageDataset(Dataset):
@@ -120,6 +121,8 @@ if __name__ == '__main__':
         model = EllipssianNetFPN().cuda()
     elif network_type == "CNN_light":
         model = EllipssianNetCNNLight().cuda()
+    elif network_type == "Slim":
+        model = EllipssianNetSlim().cuda()
 
     criterion_gradient = nn.MSELoss()  # Fully convolutional cross-entropy for gradient
     criterion_center = nn.MSELoss()  # Fully convolutional cross-entropy for center
@@ -155,6 +158,14 @@ if __name__ == '__main__':
             {'params': model.gradient_decoder.parameters(), 'lr': gradient_decoder_lr},
             {'params': model.center_decoder.parameters(), 'lr': center_decoder_lr},
             {'params': model.cov_decoder.parameters(), 'lr': cov_decoder_lr}
+        ])
+    elif network_type == "Slim":
+        optimizer = optim.Adam([
+            {'params': model.encoder.parameters(), 'lr': encoder_lr},
+            {'params': model.up_decoder.parameters(), 'lr': gradient_decoder_lr},
+            {'params': model.gradient_conv.parameters(), 'lr': gradient_decoder_lr},
+            {'params': model.center_conv.parameters(), 'lr': center_decoder_lr},
+            {'params': model.cov_conv.parameters(), 'lr': cov_decoder_lr}
         ])
     start_epoch = 0  # Default to start from scratch
     num_epochs = 100
