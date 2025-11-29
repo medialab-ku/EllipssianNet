@@ -1,0 +1,28 @@
+name: ellipssianNet
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+  - numpy=1.26.4
+  - pytorch=2.4.0
+  - pytorch-cuda=12.4
+  - torchvision=0.19.0
+  - torchaudio=2.4.0
+  - pip
+  - pip:
+      - pillow
+      - tqdm
+      - scipy
+      - matplotlib
+      - opencv-python
+      - scikit-image
+      - faiss-gpu
+      - torchmetrics
+      - lietorch
+      - torch-scatter
+      - --find-links https://data.pyg.org/whl/torch-2.4.0+cu124.html
+      - -c constraints.txt
