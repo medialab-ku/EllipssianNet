@@ -126,8 +126,10 @@ if __name__ == '__main__':
                 cv2.waitKey(100)
 
             if not save_path == "":
+                center_map_scaled = (center_map_np * 255).astype(np.uint8)
                 cv2.imwrite(save_path + f"/center/center_{idx:06d}.png", center_map_scaled)
-                cov_map_np = cov_map_t.cpu().numpy()
+                cov_map_np = cov_map_t.cpu().numpy()  # (2, 2, W, H)
+                cov_map_np = cov_map_np.transpose(0, 1, 3, 2)  # (2, 2, H, W)
                 np.save(save_path + f"/cov_raw/cov_{idx:06d}.npy", cov_map_np)
                 cov_cholesky = convert_cov_cholesky_abc(cov_map_np)
                 np.save(save_path + f"/cov_cholesky/cov_{idx:06d}.npy", cov_cholesky)
